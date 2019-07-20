@@ -34,7 +34,16 @@ fn to_timestamp(stamp: u64) -> std::time::SystemTime {
     std::time::SystemTime::UNIX_EPOCH + std::time::Duration::new(stamp, 0)
 }
 
-type OHHttpClient = std::sync::Arc<hyper::Client<hyper_tls::HttpsConnector<hyper::client::HttpConnector>>>;
+pub fn gen_auth_header() -> String {
+    let stripe_secret_key = std::env::var("STRIPE_SECRET_KEY").expect("Missing STRIPE_SECRET_KEY");
+    format!(
+        "Basic {}",
+        base64::encode(&format!("{}:", stripe_secret_key))
+    )
+}
+
+type OHHttpClient =
+    std::sync::Arc<hyper::Client<hyper_tls::HttpsConnector<hyper::client::HttpConnector>>>;
 
 pub struct Otterhound {
     auth_header: String,
@@ -43,23 +52,35 @@ pub struct Otterhound {
 }
 
 impl Otterhound {
-    pub fn new_with_some(auth_header: String, http_client: OHHttpClient) -> impl Future<Item=Self, Error=String> + Send {
+    pub fn new_with_some(
+        auth_header: String,
+        http_client: OHHttpClient,
+    ) -> impl Future<Item = Self, Error = String> + Send {
         bb8::Pool::builder()
             .build(bb8_postgres::PostgresConnectionManager::new(
-                    std::env::var("DATABASE_URL").expect("Missing DATABASE_URL"),
-                    tokio_postgres::NoTls
-                ))
+                std::env::var("DATABASE_URL").expect("Missing DATABASE_URL"),
+                tokio_postgres::NoTls,
+            ))
             .map_err(|err| format!("Failed to initialize database pool: {:?}", err))
-            .map(|db_pool| {
-                Otterhound {
-                    auth_header,
-                    db_pool,
-                    http_client,
-                }
+            .map(|db_pool| Otterhound {
+                auth_header,
+                db_pool,
+                http_client,
             })
     }
 
-    pub fn handle_event(&self, evt: EventItem) -> Box<Future<Item=(), Error=String> + Send> {
+    pub fn new() -> impl Future<Item = Self, Error = String> + Send {
+        hyper_tls::HttpsConnector::new(4)
+            .map_err(|err| format!("Failed to initialize HTTPS client: {:?}", err))
+            .into_future()
+            .and_then(|connector| {
+                let http_client = std::sync::Arc::new(hyper::Client::builder().build(connector));
+
+                Otterhound::new_with_some(gen_auth_header(), http_client)
+            })
+    }
+
+    pub fn handle_event(&self, evt: EventItem) -> Box<Future<Item = (), Error = String> + Send> {
         println!("Received event: {}", evt.type_);
 
         match evt.type_.as_ref() {
@@ -155,7 +176,7 @@ impl Otterhound {
                              .into_future()
                                  .and_then(|x| x)
                 )
-            },
+            }
             _ => Box::new(futures::future::ok(())),
         }
     }
