@@ -24,7 +24,7 @@ fn handle_request(
                 .map_err(|err| format!("Failed to read header: {:?}", err))?
                 .split(',')
                 .for_each(|pair| {
-                    let mut spl = pair.split("=");
+                    let mut spl = pair.split('=');
                     let key = spl.next().unwrap();
                     if key == "t" {
                         timestamp = spl.next().map(|x| x.to_owned());

@@ -64,7 +64,7 @@ fn main() {
             if let Some(new_last_ts) = new_last_ts {
                 let old_last_ts = std::mem::replace(&mut last_ts, Some(new_last_ts));
 
-                if let Some(_) = old_last_ts {
+                if old_last_ts.is_some() {
                     for item in resp.data {
                         runtime.spawn(
                             otterhound
